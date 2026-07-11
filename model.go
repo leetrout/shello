@@ -12,7 +12,7 @@ const (
 	minColW    = 16
 	boardTop   = 2 // rows reserved for the app header before columns start
 	colHeaderH = 2 // column title + separator line
-	cardSlot   = 2 // each card = 1 content row + 1 spacer row
+	cardGap    = 1 // spacer row between cards
 	footerH    = 4 // rows reserved at the bottom for status + help
 )
 
@@ -138,6 +138,27 @@ func (m *Model) save() {
 // cardsTopAbs is the absolute screen row where a column's cards begin.
 func cardsTopAbs() int { return boardTop + colHeaderH }
 
+// columnCardLayout returns, for each card in col, its top row (relative to
+// cardsTopAbs) and its rendered height in rows. It uses the same wrapping as the
+// renderer so mouse geometry and the display never disagree.
+func (m Model) columnCardLayout(col int) (tops, heights []int) {
+	if col < 0 || col >= len(m.board.Columns) {
+		return nil, nil
+	}
+	innerW := m.colWidth() - 2
+	offset := 0
+	for _, c := range m.board.Columns[col].Cards {
+		h := len(wrapText(c.Title, innerW))
+		if h < 1 {
+			h = 1
+		}
+		tops = append(tops, offset)
+		heights = append(heights, h)
+		offset += h + cardGap
+	}
+	return tops, heights
+}
+
 // hitColumn returns the column index for an absolute X, or -1.
 func (m Model) hitColumn(x int) int {
 	outer := m.colOuterWidth()
@@ -152,31 +173,37 @@ func (m Model) hitColumn(x int) int {
 	return col
 }
 
-// dropIndex returns the insertion index within a column for an absolute Y.
+// dropIndex returns the insertion index within a column for an absolute Y,
+// based on which card the cursor's row is above the vertical midpoint of.
 func (m Model) dropIndex(col, y int) int {
 	rel := y - cardsTopAbs()
 	if rel < 0 {
 		return 0
 	}
-	idx := (rel + cardSlot/2) / cardSlot // round to nearest slot boundary
-	n := len(m.board.Columns[col].Cards)
-	if idx > n {
-		idx = n
+	tops, heights := m.columnCardLayout(col)
+	for j := range tops {
+		mid := tops[j] + (heights[j]+1)/2
+		if rel < mid {
+			return j
+		}
 	}
-	return idx
+	return len(tops)
 }
 
-// hitCard returns the card index at absolute (x,y) within column col, or -1.
+// hitCard returns the card index at absolute (x,y) within column col, or -1 if
+// the row falls on a spacer or below the last card.
 func (m Model) hitCard(col, y int) int {
 	rel := y - cardsTopAbs()
-	if rel < 0 || rel%cardSlot != 0 {
+	if rel < 0 {
 		return -1
 	}
-	idx := rel / cardSlot
-	if idx < 0 || idx >= len(m.board.Columns[col].Cards) {
-		return -1
+	tops, heights := m.columnCardLayout(col)
+	for j := range tops {
+		if rel >= tops[j] && rel < tops[j]+heights[j] {
+			return j
+		}
 	}
-	return idx
+	return -1
 }
 
 // ---- update ----

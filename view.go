@@ -76,6 +76,60 @@ func truncate(s string, w int) string {
 	return string(r) + "…"
 }
 
+// splitAt splits s so the first part is at most width display cells wide.
+func splitAt(s string, width int) (string, string) {
+	r := []rune(s)
+	w := 0
+	for i, c := range r {
+		cw := lipgloss.Width(string(c))
+		if w+cw > width && i > 0 {
+			return string(r[:i]), string(r[i:])
+		}
+		w += cw
+	}
+	return s, ""
+}
+
+// wrapText word-wraps s to the given cell width, hard-breaking any word longer
+// than the width. It is the single source of truth for card line breaking, used
+// by both the renderer and the mouse hit-testing so their geometry always agrees.
+func wrapText(s string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	var lines []string
+	for _, para := range strings.Split(s, "\n") {
+		cur := ""
+		for _, word := range strings.Fields(para) {
+			for lipgloss.Width(word) > width {
+				if cur != "" {
+					lines = append(lines, cur)
+					cur = ""
+				}
+				var head string
+				head, word = splitAt(word, width)
+				lines = append(lines, head)
+			}
+			switch {
+			case cur == "":
+				cur = word
+			case lipgloss.Width(cur)+1+lipgloss.Width(word) <= width:
+				cur += " " + word
+			default:
+				lines = append(lines, cur)
+				cur = word
+			}
+		}
+		if cur != "" {
+			lines = append(lines, cur)
+		}
+	}
+	if len(lines) == 0 {
+		lines = append(lines, "")
+	}
+	return lines
+}
+
 func (m Model) View() string {
 	if m.width == 0 {
 		return "starting shello…"
@@ -115,7 +169,7 @@ func (m Model) renderColumn(i int, col Column, w, h int) string {
 		container = container.MarginRight(colGap)
 	}
 
-	lines := make([]string, 0, len(col.Cards)*cardSlot+colHeaderH)
+	lines := make([]string, 0, len(col.Cards)*3+colHeaderH)
 
 	// header (colHeaderH lines): title + separator
 	titleStyle := colTitleStyle
@@ -129,7 +183,7 @@ func (m Model) renderColumn(i int, col Column, w, h int) string {
 	lines = append(lines, titleStyle.Width(w).Render(title+" "+countBadge(count)))
 	lines = append(lines, sepStyle.Width(w).Render(strings.Repeat("─", w)))
 
-	// cards (cardSlot lines each: content + spacer)
+	// cards: each wraps to as many rows as its text needs, then a spacer row
 	for j, card := range col.Cards {
 		style := cardStyle
 		switch {
@@ -138,7 +192,8 @@ func (m Model) renderColumn(i int, col Column, w, h int) string {
 		case i == m.curCol && j == m.curCard && !m.drag.active:
 			style = cardSelected
 		}
-		lines = append(lines, style.Width(w).Render(truncate(card.Title, w-2)))
+		wrapped := strings.Join(wrapText(card.Title, w-2), "\n")
+		lines = append(lines, style.Width(w).Render(wrapped))
 		lines = append(lines, sepStyle.Width(w).Render("")) // spacer row
 	}
 	if count == 0 {
