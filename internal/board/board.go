@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 // Card is a single Trello-style card.
@@ -121,4 +122,76 @@ func (b *Board) MoveCard(fromCol, fromIdx, toCol, toIdx int) (int, int) {
 	copy(dst.Cards[toIdx+1:], dst.Cards[toIdx:])
 	dst.Cards[toIdx] = card
 	return toCol, toIdx
+}
+
+// groupRefs collapses a set of {column, index} card references into a
+// per-column list of valid, de-duplicated indices, dropping any ref that is out
+// of range for the current board. It is the shared front-end for the batch
+// operations below.
+func groupRefs(b *Board, refs [][2]int) map[int][]int {
+	seen := make(map[[2]int]bool, len(refs))
+	byCol := make(map[int][]int)
+	for _, r := range refs {
+		if seen[r] {
+			continue
+		}
+		seen[r] = true
+		col, idx := r[0], r[1]
+		if col < 0 || col >= len(b.Columns) {
+			continue
+		}
+		if idx < 0 || idx >= len(b.Columns[col].Cards) {
+			continue
+		}
+		byCol[col] = append(byCol[col], idx)
+	}
+	return byCol
+}
+
+// DeleteCards removes every card named in refs (each a {column, index} pair).
+// Within a column the indices are removed high-to-low so earlier removals don't
+// invalidate later ones. Out-of-range and duplicate refs are ignored.
+func (b *Board) DeleteCards(refs [][2]int) {
+	for col, idxs := range groupRefs(b, refs) {
+		sort.Sort(sort.Reverse(sort.IntSlice(idxs)))
+		for _, i := range idxs {
+			cards := b.Columns[col].Cards
+			b.Columns[col].Cards = append(cards[:i], cards[i+1:]...)
+		}
+	}
+}
+
+// MoveCardsByColumn shifts each card named in refs by delta columns (delta is
+// normally -1 or +1). Within a source column the selected cards are removed and
+// appended — preserving their top-to-bottom order — to the end of the
+// destination column (source+delta). Cards whose destination column is out of
+// range are left in place. Duplicate and out-of-range refs are ignored.
+func (b *Board) MoveCardsByColumn(refs [][2]int, delta int) {
+	type move struct {
+		dst   int
+		cards []Card
+	}
+	// Capture and detach every source column first, then append, so a column
+	// that is both a source and a destination isn't seen mid-mutation.
+	var moves []move
+	for col, idxs := range groupRefs(b, refs) {
+		dst := col + delta
+		if dst < 0 || dst >= len(b.Columns) {
+			continue // at the edge: leave these cards where they are
+		}
+		sort.Ints(idxs)
+		cards := make([]Card, len(idxs))
+		for k, i := range idxs {
+			cards[k] = b.Columns[col].Cards[i]
+		}
+		for k := len(idxs) - 1; k >= 0; k-- {
+			i := idxs[k]
+			src := b.Columns[col].Cards
+			b.Columns[col].Cards = append(src[:i], src[i+1:]...)
+		}
+		moves = append(moves, move{dst: dst, cards: cards})
+	}
+	for _, mv := range moves {
+		b.Columns[mv.dst].Cards = append(b.Columns[mv.dst].Cards, mv.cards...)
+	}
 }

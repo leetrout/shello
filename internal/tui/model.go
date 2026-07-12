@@ -4,6 +4,7 @@ package tui
 
 import (
 	"reflect"
+	"sort"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -107,6 +108,11 @@ type Model struct {
 	// keyboard move: arrows/hjkl then relocate it until it is dropped.
 	grabbed bool
 
+	// selected is the set of marked cards for batch actions. It is cleared on any
+	// board mutation (see Update), so it only ever refers to cards that exist in
+	// the current layout — the indices never outlive the board they describe.
+	selected map[cardRef]bool
+
 	// colScroll[i] is the number of card rows scrolled off the top of column i.
 	colScroll []int
 
@@ -128,6 +134,11 @@ type snapshot struct {
 	curCol  int
 	curCard int
 }
+
+// cardRef identifies a card by its column and index for multi-select. Refs are
+// only meaningful within the current board layout: the selection is dropped
+// whenever the board changes (see Update), so a ref never outlives its indices.
+type cardRef struct{ col, idx int }
 
 // maxUndo bounds how many snapshots each stack retains.
 const maxUndo = 100
@@ -377,6 +388,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			mm.pushUndo(before)
 		}
 	}
+	// Any board mutation invalidates the position-based selection: a batch action
+	// has consumed it, and a single edit would leave its indices pointing at the
+	// wrong cards. Clearing here keeps every mutation path from having to remember.
+	if !reflect.DeepEqual(before.board, mm.board) {
+		mm.selected = nil
+	}
 	return mm, cmd
 }
 
@@ -400,6 +417,7 @@ func (m Model) snapshot() snapshot {
 func (m *Model) restore(s snapshot) {
 	m.board = s.board.Clone()
 	m.curCol, m.curCard = s.curCol, s.curCard
+	m.selected = nil // the restored layout invalidates any position-based selection
 	m.clampCursor()
 	m.save()
 }
@@ -579,11 +597,27 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.clampCursor()
 
-	// move card between columns
+	// mark cards for batch actions
+	case "m":
+		m.toggleMark()
+	case "M":
+		m.toggleMarkColumn()
+	case "esc":
+		m.selected = nil
+
+	// move card(s) between columns — batches when a selection exists
 	case "H", "shift+left":
-		m.moveCurrentCard(m.curCol-1, -1)
+		if len(m.selected) > 0 {
+			m.moveMarkedBy(-1)
+		} else {
+			m.moveCurrentCard(m.curCol-1, -1)
+		}
 	case "L", "shift+right":
-		m.moveCurrentCard(m.curCol+1, -1)
+		if len(m.selected) > 0 {
+			m.moveMarkedBy(1)
+		} else {
+			m.moveCurrentCard(m.curCol+1, -1)
+		}
 	// reorder card within column
 	case "K", "shift+up":
 		m.moveCurrentCard(m.curCol, m.curCard-1)
@@ -606,7 +640,11 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.startInput(purposeEditCard, "edit card…", m.board.Columns[m.curCol].Cards[m.curCard].Title)
 		}
 	case "d", "x":
-		m.deleteCurrentCard()
+		if len(m.selected) > 0 {
+			m.deleteMarked()
+		} else {
+			m.deleteCurrentCard()
+		}
 	case "n":
 		m.startInput(purposeAddColumn, "new column…", "")
 	case "r":
@@ -727,6 +765,93 @@ func (m *Model) deleteCurrentCard() {
 		m.clampCursor()
 		m.save()
 	}
+}
+
+// ---- multi-select ----
+
+// isMarked reports whether the card at (col, idx) is in the selection. Indexing
+// a nil map is safe, so no guard is needed before the selection exists.
+func (m Model) isMarked(col, idx int) bool { return m.selected[cardRef{col, idx}] }
+
+// toggleMark adds or removes the current card from the selection.
+func (m *Model) toggleMark() {
+	if len(m.board.Columns) == 0 {
+		return
+	}
+	if n := len(m.board.Columns[m.curCol].Cards); m.curCard < 0 || m.curCard >= n {
+		return
+	}
+	ref := cardRef{m.curCol, m.curCard}
+	if m.selected[ref] {
+		delete(m.selected, ref)
+		return
+	}
+	if m.selected == nil {
+		m.selected = make(map[cardRef]bool)
+	}
+	m.selected[ref] = true
+}
+
+// toggleMarkColumn marks every card in the current column, or clears them all if
+// they are already fully marked.
+func (m *Model) toggleMarkColumn() {
+	if len(m.board.Columns) == 0 {
+		return
+	}
+	cards := m.board.Columns[m.curCol].Cards
+	if len(cards) == 0 {
+		return
+	}
+	allMarked := true
+	for j := range cards {
+		if !m.isMarked(m.curCol, j) {
+			allMarked = false
+			break
+		}
+	}
+	if m.selected == nil {
+		m.selected = make(map[cardRef]bool)
+	}
+	for j := range cards {
+		ref := cardRef{m.curCol, j}
+		if allMarked {
+			delete(m.selected, ref)
+		} else {
+			m.selected[ref] = true
+		}
+	}
+}
+
+// markedRefs returns the selection as {col, idx} pairs for the board batch
+// helpers, sorted so batch operations are deterministic.
+func (m Model) markedRefs() [][2]int {
+	refs := make([][2]int, 0, len(m.selected))
+	for r := range m.selected {
+		refs = append(refs, [2]int{r.col, r.idx})
+	}
+	sort.Slice(refs, func(i, j int) bool {
+		if refs[i][0] != refs[j][0] {
+			return refs[i][0] < refs[j][0]
+		}
+		return refs[i][1] < refs[j][1]
+	})
+	return refs
+}
+
+// deleteMarked removes every marked card. The whole batch is one board mutation,
+// so Update records it as a single undo entry and clears the selection.
+func (m *Model) deleteMarked() {
+	m.board.DeleteCards(m.markedRefs())
+	m.clampCursor()
+	m.save()
+}
+
+// moveMarkedBy shifts every marked card by delta columns (see
+// board.MoveCardsByColumn) — the batch equivalent of H / L.
+func (m *Model) moveMarkedBy(delta int) {
+	m.board.MoveCardsByColumn(m.markedRefs(), delta)
+	m.clampCursor()
+	m.save()
 }
 
 func (m *Model) deleteCurrentColumn() {

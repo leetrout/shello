@@ -292,6 +292,85 @@ func TestCursorMoveIsNotUndoable(t *testing.T) {
 	assert.Empty(t, m.undo, "moving the cursor records no undo state")
 }
 
+// ---- multi-select / batch ----
+
+func TestMarkToggle(t *testing.T) {
+	m := newModel(t, sample(), 100, 40)
+
+	m = send(m, key("m"))
+	assert.True(t, m.isMarked(0, 0), "m marks the current card")
+
+	m = send(m, key("m"))
+	assert.False(t, m.isMarked(0, 0), "m again unmarks it")
+	assert.Empty(t, m.selected, "unmarking clears the selection")
+}
+
+func TestMarkColumnTogglesAll(t *testing.T) {
+	m := newModel(t, sample(), 100, 40)
+
+	m = send(m, key("M"))
+	assert.True(t, m.isMarked(0, 0) && m.isMarked(0, 1) && m.isMarked(0, 2), "M marks every card in the column")
+	assert.Len(t, m.selected, 3)
+
+	m = send(m, key("M"))
+	assert.Empty(t, m.selected, "M again clears the whole column")
+}
+
+func TestBatchDeleteMarked(t *testing.T) {
+	m := newModel(t, sample(), 100, 40)
+
+	m = send(m, key("m")) // mark a0
+	m = send(m, key("j"))
+	m = send(m, key("j"))
+	m = send(m, key("m")) // mark a2
+	require.Len(t, m.selected, 2)
+
+	m = send(m, key("d"))
+	assert.Equal(t, []string{"a1"}, cardTitles(m, 0), "batch delete removes every marked card")
+	assert.Empty(t, m.selected, "selection cleared after the batch action")
+
+	m = send(m, key("u"))
+	assert.Equal(t, []string{"a0", "a1", "a2"}, cardTitles(m, 0), "a batch delete is a single undo entry")
+}
+
+func TestBatchMoveMarked(t *testing.T) {
+	m := newModel(t, sample(), 100, 40)
+
+	m = send(m, key("m")) // mark a0
+	m = send(m, key("j"))
+	m = send(m, key("j"))
+	m = send(m, key("m")) // mark a2
+
+	m = send(m, key("L")) // move the marked set one column right
+	assert.Equal(t, []string{"a1"}, cardTitles(m, 0), "marked cards left the source column")
+	assert.Equal(t, []string{"b0", "a0", "a2"}, cardTitles(m, 1), "marked cards appended in order")
+	assert.Empty(t, m.selected, "selection cleared after the batch move")
+
+	m = send(m, key("u"))
+	assert.Equal(t, []string{"a0", "a1", "a2"}, cardTitles(m, 0), "one undo reverses the whole batch move")
+	assert.Equal(t, []string{"b0"}, cardTitles(m, 1))
+}
+
+func TestSingleEditClearsSelection(t *testing.T) {
+	m := newModel(t, sample(), 100, 40)
+	m = send(m, key("m")) // mark a0
+	m = send(m, key("j"))
+	m = send(m, key("d")) // single delete of a1 (a1 isn't marked, so it stays a single op)
+	assert.Empty(t, m.selected, "a board mutation invalidates and clears the selection")
+}
+
+func TestMarkAndNavigationDoNotRecordUndo(t *testing.T) {
+	m := newModel(t, sample(), 100, 40)
+	m = send(m, key("m"))
+	m = send(m, key("j"))
+	m = send(m, key("m"))
+	assert.Empty(t, m.undo, "marking and navigating records no undo state")
+	assert.Len(t, m.selected, 2, "marks survive navigation")
+
+	m = send(m, key("esc"))
+	assert.Empty(t, m.selected, "esc clears the selection")
+}
+
 // ---- rendering ----
 
 func TestViewReflectsCursor(t *testing.T) {

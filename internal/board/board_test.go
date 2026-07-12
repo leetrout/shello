@@ -70,6 +70,32 @@ func TestMoveCardOutOfRangeIsNoOp(t *testing.T) {
 	assert.Len(t, b.Columns[1].Cards, 1, "destination untouched")
 }
 
+func TestDeleteCards(t *testing.T) {
+	b := sample()
+	// delete a0 and a2 from column A plus b0 from column B; refs deliberately
+	// out of order and with an out-of-range entry that must be ignored.
+	b.DeleteCards([][2]int{{0, 2}, {1, 0}, {0, 0}, {0, 99}})
+	assert.Equal(t, []string{"a1"}, titles(b.Columns[0]), "column A keeps only the unmarked card")
+	assert.Equal(t, []string{}, titles(b.Columns[1]), "column B emptied")
+}
+
+func TestMoveCardsByColumn(t *testing.T) {
+	b := sample()
+	// move a0 and a2 one column to the right, preserving their order.
+	b.MoveCardsByColumn([][2]int{{0, 2}, {0, 0}}, 1)
+	assert.Equal(t, []string{"a1"}, titles(b.Columns[0]), "moved cards left the source column")
+	assert.Equal(t, []string{"b0", "a0", "a2"}, titles(b.Columns[1]), "appended to dest in original order")
+}
+
+func TestMoveCardsByColumnEdgeStaysPut(t *testing.T) {
+	b := sample()
+	// column A is already the leftmost: moving its cards left is a no-op, while
+	// b0 moving left lands at the end of A.
+	b.MoveCardsByColumn([][2]int{{0, 0}, {1, 0}}, -1)
+	assert.Equal(t, []string{"a0", "a1", "a2", "b0"}, titles(b.Columns[0]), "b0 moved left; a0 stayed at the edge")
+	assert.Equal(t, []string{}, titles(b.Columns[1]))
+}
+
 func TestLoadMissingReturnsDefault(t *testing.T) {
 	b, err := Load(filepath.Join(t.TempDir(), "does-not-exist.json"))
 	require.NoError(t, err)
