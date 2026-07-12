@@ -28,11 +28,11 @@ keyboard or the mouse — drag-and-drop included.
 can install and pin it directly from GitHub — no toolchain required:
 
 ```bash
-mise use -g ubi:leetrout/shello        # latest, on your PATH
-mise use -g ubi:leetrout/shello@0.1.0  # or pin a version
+mise use -g github:leetrout/shello        # latest, on your PATH
+mise use -g github:leetrout/shello@0.1.0  # or pin a version
 ```
 
-Prefer a one-off? `mise x ubi:leetrout/shello -- shello`.
+Prefer a one-off? `mise x github:leetrout/shello -- shello`.
 
 ### From a release archive
 
