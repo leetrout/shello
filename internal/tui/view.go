@@ -52,6 +52,11 @@ var (
 			Foreground(lipgloss.Color("#0d0d14")).
 			Bold(true)
 
+	cardMarked = cardStyle.
+			Background(lipgloss.Color("#2F4A6B")).
+			Foreground(lipgloss.Color("#CFE3FF")).
+			Bold(true)
+
 	cardDragging = cardStyle.
 			Faint(true).
 			Background(panelBg).
@@ -200,6 +205,8 @@ func (m Model) renderColumn(i int, col board.Column, w, h int) string {
 			style = cardGrabbed
 		case i == m.curCol && j == m.curCard && !m.drag.active:
 			style = cardSelected
+		case m.isMarked(i, j):
+			style = cardMarked
 		}
 		wrapped := strings.Join(wrapText(card.Title, w-2), "\n")
 		cardRows = append(cardRows, strings.Split(style.Width(w).Render(wrapped), "\n")...)
@@ -295,6 +302,9 @@ func (m Model) renderFooter() string {
 		}
 		b.WriteString(statusStyle.Render("⇢ dragging \"" + truncate(m.drag.title, 30) + "\" → " + target))
 		b.WriteString("\n")
+	case len(m.selected) > 0:
+		b.WriteString(grabStyle.Render("◆ " + itoa(len(m.selected)) + " selected — H/L move · d delete · esc clear"))
+		b.WriteString("\n")
 	case m.status != "":
 		b.WriteString(statusStyle.Render(m.status))
 		b.WriteString("\n")
@@ -308,7 +318,7 @@ func (m Model) renderFooter() string {
 	return b.String()
 }
 
-const shortHelp = "hjkl/↑↓←→ move cursor · space grab card · < > move column · " +
+const shortHelp = "hjkl/↑↓←→ move cursor · space grab · m mark · < > move column · " +
 	"a add · e edit · d del · n col · u undo · ? help · q quit"
 
 const fullHelp = `navigate   ←/→/h/l columns   ↑/↓/j/k cards   g/G top/bottom
@@ -316,6 +326,7 @@ move card  space to grab, then ←→ column / ↑↓ reorder, space to drop
            (H/L/J/K also move the selected card directly)
 mouse      click a card and drag it to any column to drop it
 cards      a add   e/enter edit   d/x delete   (empty edit deletes)
+select     m mark card   M mark column   esc clear   then H/L move · d delete
 columns    n new   r rename   < / >  move left/right   D delete (asks first)
 history    u undo   ctrl+r redo
 other      s save (auto-saves on every change)   ? toggle help   q quit`
