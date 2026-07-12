@@ -67,6 +67,7 @@ func TestMoveCardClampsOutOfRange(t *testing.T) {
 func TestDropIndexRounding(t *testing.T) {
 	m := NewModel(sample(), "x")
 	m.width = 100
+	m.height = 40
 	top := cardsTopAbs()
 	// single-line cards: slot = 1 row content + 1 spacer = 2 rows each
 	if got := m.dropIndex(0, top); got != 0 {
@@ -89,6 +90,7 @@ func TestDropIndexMultiLineCard(t *testing.T) {
 	}}}}
 	m := NewModel(b, "x")
 	m.width = 40 // colWidth 40 → inner 38 → the long card wraps to >1 row
+	m.height = 40
 	tops, heights := m.columnCardLayout(0)
 	if heights[0] < 2 {
 		t.Fatalf("long card should wrap to multiple rows, got height %d", heights[0])
@@ -106,6 +108,7 @@ func TestDropIndexMultiLineCard(t *testing.T) {
 func TestHitCardAndColumn(t *testing.T) {
 	m := NewModel(sample(), "x")
 	m.width = 100 // 2 cols → colWidth 49, colOuter 51
+	m.height = 40
 	if col := m.hitColumn(0); col != 0 {
 		t.Fatalf("hitColumn(0)=%d want 0", col)
 	}

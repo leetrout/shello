@@ -84,6 +84,13 @@ type Model struct {
 	input   textinput.Model
 
 	drag drag
+
+	// grabbed is true when the selected card has been "picked up" for
+	// keyboard move: arrows/hjkl then relocate it until it is dropped.
+	grabbed bool
+
+	// colScroll[i] is the number of card rows scrolled off the top of column i.
+	colScroll []int
 }
 
 // NewModel builds the initial model.
@@ -125,6 +132,7 @@ func (m *Model) clampCursor() {
 	if n == 0 {
 		m.curCard = 0
 	}
+	m.ensureVisible()
 }
 
 func (m *Model) save() {
@@ -159,6 +167,87 @@ func (m Model) columnCardLayout(col int) (tops, heights []int) {
 	return tops, heights
 }
 
+// cardsViewH is the number of card rows visible in a column (below its header).
+func (m Model) cardsViewH() int {
+	h := m.boardHeight() - colHeaderH
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
+
+// contentHeight is the total number of rows a column's cards occupy.
+func (m Model) contentHeight(col int) int {
+	tops, heights := m.columnCardLayout(col)
+	if len(tops) == 0 {
+		return 0
+	}
+	last := len(tops) - 1
+	return tops[last] + heights[last]
+}
+
+// maxScroll is the furthest a column can scroll before its last card sits at the
+// bottom of the viewport.
+func (m Model) maxScroll(col int) int {
+	over := m.contentHeight(col) - m.cardsViewH()
+	if over < 0 {
+		return 0
+	}
+	return over
+}
+
+// scrollFor returns the clamped scroll offset (in rows) for a column.
+func (m Model) scrollFor(col int) int {
+	s := 0
+	if col >= 0 && col < len(m.colScroll) {
+		s = m.colScroll[col]
+	}
+	if max := m.maxScroll(col); s > max {
+		s = max
+	}
+	if s < 0 {
+		s = 0
+	}
+	return s
+}
+
+// setScroll stores a clamped scroll offset for a column, growing the slice.
+func (m *Model) setScroll(col, v int) {
+	if col < 0 {
+		return
+	}
+	for len(m.colScroll) <= col {
+		m.colScroll = append(m.colScroll, 0)
+	}
+	if max := m.maxScroll(col); v > max {
+		v = max
+	}
+	if v < 0 {
+		v = 0
+	}
+	m.colScroll[col] = v
+}
+
+// ensureVisible scrolls the current column so the selected card is fully in view.
+func (m *Model) ensureVisible() {
+	col := m.curCol
+	tops, heights := m.columnCardLayout(col)
+	if m.curCard < 0 || m.curCard >= len(tops) {
+		return
+	}
+	top := tops[m.curCard]
+	bottom := top + heights[m.curCard]
+	view := m.cardsViewH()
+	s := m.scrollFor(col)
+	if top < s {
+		s = top
+	}
+	if bottom > s+view {
+		s = bottom - view
+	}
+	m.setScroll(col, s)
+}
+
 // hitColumn returns the column index for an absolute X, or -1.
 func (m Model) hitColumn(x int) int {
 	outer := m.colOuterWidth()
@@ -176,7 +265,7 @@ func (m Model) hitColumn(x int) int {
 // dropIndex returns the insertion index within a column for an absolute Y,
 // based on which card the cursor's row is above the vertical midpoint of.
 func (m Model) dropIndex(col, y int) int {
-	rel := y - cardsTopAbs()
+	rel := y - cardsTopAbs() + m.scrollFor(col)
 	if rel < 0 {
 		return 0
 	}
@@ -193,7 +282,10 @@ func (m Model) dropIndex(col, y int) int {
 // hitCard returns the card index at absolute (x,y) within column col, or -1 if
 // the row falls on a spacer or below the last card.
 func (m Model) hitCard(col, y int) int {
-	rel := y - cardsTopAbs()
+	if y < cardsTopAbs() || y >= cardsTopAbs()+m.cardsViewH() {
+		return -1 // outside the scrollable card viewport
+	}
+	rel := y - cardsTopAbs() + m.scrollFor(col)
 	if rel < 0 {
 		return -1
 	}
@@ -292,12 +384,25 @@ func (m *Model) startInput(p inputPurpose, prompt, initial string) {
 }
 
 func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// While a card is grabbed, movement keys carry the card instead of the
+	// cursor. This is the keyboard equivalent of a mouse drag.
+	if m.grabbed {
+		return m.handleGrabbedKey(msg)
+	}
+
 	switch msg.String() {
 	case "ctrl+c", "q":
 		m.save()
 		return m, tea.Quit
 	case "?":
 		m.showHelp = !m.showHelp
+		return m, nil
+
+	// pick up the selected card for a keyboard move
+	case " ":
+		if len(m.board.Columns) > 0 && len(m.board.Columns[m.curCol].Cards) > 0 {
+			m.grabbed = true
+		}
 		return m, nil
 
 	// selection movement
@@ -358,6 +463,60 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleGrabbedKey processes keys while a card is picked up: movement keys
+// relocate the card, and space/enter/esc drop it.
+func (m Model) handleGrabbedKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case " ", "enter", "esc":
+		m.grabbed = false
+	case "ctrl+c", "q":
+		m.grabbed = false
+		m.save()
+		return m, tea.Quit
+
+	case "left", "h", "H":
+		m.grabMove(-1, 0)
+	case "right", "l", "L":
+		m.grabMove(1, 0)
+	case "up", "k", "K":
+		m.grabMove(0, -1)
+	case "down", "j", "J":
+		m.grabMove(0, 1)
+	}
+	return m, nil
+}
+
+// grabMove relocates the grabbed card by colDelta columns and/or rowDelta rows,
+// keeping the cursor on the card so it can keep being moved.
+func (m *Model) grabMove(colDelta, rowDelta int) {
+	if len(m.board.Columns) == 0 {
+		return
+	}
+	toCol := m.curCol + colDelta
+	if toCol < 0 || toCol >= len(m.board.Columns) {
+		return // at the edge; nothing to do
+	}
+
+	var toIdx int
+	if colDelta != 0 {
+		// switching columns: keep a similar vertical slot
+		toIdx = m.curCard
+		if n := len(m.board.Columns[toCol].Cards); toIdx > n {
+			toIdx = n
+		}
+	} else {
+		toIdx = m.curCard + rowDelta
+		if toIdx < 0 || toIdx >= len(m.board.Columns[m.curCol].Cards) {
+			return // already at top/bottom of this column
+		}
+	}
+
+	nc, ni := m.board.moveCard(m.curCol, m.curCard, toCol, toIdx)
+	m.curCol, m.curCard = nc, ni
+	m.clampCursor()
+	m.save()
+}
+
 func (m *Model) moveCurrentCard(toCol, toIdx int) {
 	if len(m.board.Columns) == 0 {
 		return
@@ -392,6 +551,9 @@ func (m *Model) deleteCurrentColumn() {
 		return
 	}
 	m.board.Columns = append(m.board.Columns[:m.curCol], m.board.Columns[m.curCol+1:]...)
+	if m.curCol < len(m.colScroll) {
+		m.colScroll = append(m.colScroll[:m.curCol], m.colScroll[m.curCol+1:]...)
+	}
 	if m.curCol >= len(m.board.Columns) {
 		m.curCol = len(m.board.Columns) - 1
 	}
@@ -404,6 +566,21 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.mode == modeInput {
 		return m, nil
 	}
+
+	// mouse wheel scrolls whichever column the cursor is over
+	if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
+		col := m.hitColumn(msg.X)
+		if col < 0 {
+			col = m.curCol
+		}
+		delta := 2
+		if msg.Button == tea.MouseButtonWheelUp {
+			delta = -2
+		}
+		m.setScroll(col, m.scrollFor(col)+delta)
+		return m, nil
+	}
+
 	switch msg.Action {
 	case tea.MouseActionPress:
 		if msg.Button != tea.MouseButtonLeft {

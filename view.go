@@ -45,6 +45,11 @@ var (
 			Foreground(lipgloss.Color("#ffffff")).
 			Bold(true)
 
+	cardGrabbed = cardStyle.
+			Background(lipgloss.Color("#4EF0A5")).
+			Foreground(lipgloss.Color("#0d0d14")).
+			Bold(true)
+
 	cardDragging = cardStyle.
 			Faint(true).
 			Background(panelBg).
@@ -60,6 +65,12 @@ var (
 	statusStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#4EF0A5")).
 			Italic(true)
+
+	grabStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#0d0d14")).
+			Background(lipgloss.Color("#4EF0A5")).
+			Bold(true).
+			Padding(0, 1)
 )
 
 func truncate(s string, w int) string {
@@ -169,36 +180,61 @@ func (m Model) renderColumn(i int, col Column, w, h int) string {
 		container = container.MarginRight(colGap)
 	}
 
-	lines := make([]string, 0, len(col.Cards)*3+colHeaderH)
+	// build the flat list of card rows (wrapped content + a spacer per card)
+	cardRows := make([]string, 0, len(col.Cards)*3)
+	for j, card := range col.Cards {
+		style := cardStyle
+		switch {
+		case m.drag.active && i == m.drag.fromCol && j == m.drag.fromIdx:
+			style = cardDragging
+		case m.grabbed && i == m.curCol && j == m.curCard:
+			style = cardGrabbed
+		case i == m.curCol && j == m.curCard && !m.drag.active:
+			style = cardSelected
+		}
+		wrapped := strings.Join(wrapText(card.Title, w-2), "\n")
+		for _, ln := range strings.Split(style.Width(w).Render(wrapped), "\n") {
+			cardRows = append(cardRows, ln)
+		}
+		cardRows = append(cardRows, sepStyle.Width(w).Render("")) // spacer row
+	}
+	if len(col.Cards) == 0 {
+		cardRows = append(cardRows, emptyStyle.Width(w).Render("(empty)"))
+	}
 
-	// header (colHeaderH lines): title + separator
+	// apply the scroll window
+	view := m.cardsViewH()
+	scroll := m.scrollFor(i)
+	end := scroll + view
+	if end > len(cardRows) {
+		end = len(cardRows)
+	}
+	visible := cardRows
+	if scroll < len(cardRows) {
+		visible = cardRows[scroll:end]
+	} else {
+		visible = nil
+	}
+
+	// header: title (with scroll hints) + separator
 	titleStyle := colTitleStyle
 	if m.drag.active && m.drag.overCol == i {
 		titleStyle = colTitleDrop
 	} else if i == m.curCol {
 		titleStyle = colTitleActive
 	}
-	count := len(col.Cards)
-	title := truncate(col.Title, w-6)
-	lines = append(lines, titleStyle.Width(w).Render(title+" "+countBadge(count)))
+	hint := ""
+	if scroll > 0 {
+		hint += " ↑"
+	}
+	if scroll < m.maxScroll(i) {
+		hint += " ↓"
+	}
+	title := truncate(col.Title, w-8)
+	lines := make([]string, 0, view+colHeaderH)
+	lines = append(lines, titleStyle.Width(w).Render(title+" "+countBadge(len(col.Cards))+hint))
 	lines = append(lines, sepStyle.Width(w).Render(strings.Repeat("─", w)))
-
-	// cards: each wraps to as many rows as its text needs, then a spacer row
-	for j, card := range col.Cards {
-		style := cardStyle
-		switch {
-		case m.drag.active && i == m.drag.fromCol && j == m.drag.fromIdx:
-			style = cardDragging
-		case i == m.curCol && j == m.curCard && !m.drag.active:
-			style = cardSelected
-		}
-		wrapped := strings.Join(wrapText(card.Title, w-2), "\n")
-		lines = append(lines, style.Width(w).Render(wrapped))
-		lines = append(lines, sepStyle.Width(w).Render("")) // spacer row
-	}
-	if count == 0 {
-		lines = append(lines, emptyStyle.Width(w).Render("(empty)"))
-	}
+	lines = append(lines, visible...)
 
 	body := lipgloss.JoinVertical(lipgloss.Left, lines...)
 	return container.Render(body)
@@ -231,14 +267,18 @@ func (m Model) renderFooter() string {
 	}
 
 	var b strings.Builder
-	if m.drag.active {
+	switch {
+	case m.grabbed:
+		b.WriteString(grabStyle.Render("◆ moving card — ←→ column · ↑↓ reorder · space/enter to drop"))
+		b.WriteString("\n")
+	case m.drag.active:
 		target := "—"
 		if m.drag.overCol >= 0 {
 			target = m.board.Columns[m.drag.overCol].Title
 		}
 		b.WriteString(statusStyle.Render("⇢ dragging \"" + truncate(m.drag.title, 30) + "\" → " + target))
 		b.WriteString("\n")
-	} else if m.status != "" {
+	case m.status != "":
 		b.WriteString(statusStyle.Render(m.status))
 		b.WriteString("\n")
 	}
@@ -246,13 +286,14 @@ func (m Model) renderFooter() string {
 	if m.showHelp {
 		b.WriteString(helpStyle.Render(fullHelp))
 	} else {
-		b.WriteString(helpStyle.Render("↑↓←→/hjkl move · H/L card→col · J/K reorder · a add · e edit · d del · n col · drag with mouse · ? help · q quit"))
+		b.WriteString(helpStyle.Render("hjkl/↑↓←→ move cursor · space grab & move card · a add · e edit · d del · n col · mouse drag · ? help · q quit"))
 	}
 	return b.String()
 }
 
 const fullHelp = `navigate   ←/→/h/l columns   ↑/↓/j/k cards   g/G top/bottom
-move card  H / L  to prev/next column      J / K  reorder up/down
+move card  space to grab, then ←→ column / ↑↓ reorder, space to drop
+           (H/L/J/K also move the selected card directly)
 mouse      click a card and drag it to any column to drop it
 cards      a add   e/enter edit   d/x delete   (empty edit deletes)
 columns    n new   r rename   D delete
