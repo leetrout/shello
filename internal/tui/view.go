@@ -309,7 +309,7 @@ func (m Model) renderFooter() string {
 }
 
 const shortHelp = "hjkl/↑↓←→ move cursor · space grab card · < > move column · " +
-	"a add · e edit · d del · n col · ? help · q quit"
+	"a add · e edit · d del · n col · u undo · ? help · q quit"
 
 const fullHelp = `navigate   ←/→/h/l columns   ↑/↓/j/k cards   g/G top/bottom
 move card  space to grab, then ←→ column / ↑↓ reorder, space to drop
@@ -317,4 +317,5 @@ move card  space to grab, then ←→ column / ↑↓ reorder, space to drop
 mouse      click a card and drag it to any column to drop it
 cards      a add   e/enter edit   d/x delete   (empty edit deletes)
 columns    n new   r rename   < / >  move left/right   D delete (asks first)
+history    u undo   ctrl+r redo
 other      s save (auto-saves on every change)   ? toggle help   q quit`
