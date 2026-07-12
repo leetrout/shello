@@ -34,6 +34,18 @@ mise use -g github:leetrout/shello@0.1.0  # or pin a version
 
 Prefer a one-off? `mise x github:leetrout/shello -- shello`.
 
+> [!NOTE]
+> mise's default `minimum_release_age` (24h) hides releases younger than a day
+> as a supply-chain safeguard. If `@latest` fails with
+> `no versions found ... matching date filter` right after a release, either wait
+> 24h or bypass the gate for this install:
+>
+> ```bash
+> MISE_MINIMUM_RELEASE_AGE=0 mise use -g github:leetrout/shello
+> # or exclude shello from the gate permanently:
+> mise settings add minimum_release_age_excludes github:leetrout/shello
+> ```
+
 ### From a release archive
 
 Grab the archive for your OS/arch from the [releases page](https://github.com/leetrout/shello/releases),
