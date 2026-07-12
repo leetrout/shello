@@ -71,6 +71,12 @@ var (
 			Background(lipgloss.Color("#4EF0A5")).
 			Bold(true).
 			Padding(0, 1)
+
+	confirmStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#ffffff")).
+			Background(lipgloss.Color("#D64550")).
+			Bold(true).
+			Padding(0, 1)
 )
 
 func truncate(s string, w int) string {
@@ -265,6 +271,18 @@ func (m Model) renderFooter() string {
 	if m.mode == modeInput {
 		return m.input.View()
 	}
+	if m.mode == modeConfirm && m.confirm == confirmDeleteColumn && len(m.board.Columns) > 0 {
+		name := truncate(m.board.Columns[m.curCol].Title, 30)
+		n := len(m.board.Columns[m.curCol].Cards)
+		prompt := "Delete column \"" + name + "\""
+		if n > 0 {
+			prompt += " and its " + itoa(n) + " card"
+			if n != 1 {
+				prompt += "s"
+			}
+		}
+		return confirmStyle.Render(prompt+"?") + helpStyle.Render("  y/enter confirm · n/esc cancel")
+	}
 
 	var b strings.Builder
 	switch {
@@ -286,7 +304,7 @@ func (m Model) renderFooter() string {
 	if m.showHelp {
 		b.WriteString(helpStyle.Render(fullHelp))
 	} else {
-		b.WriteString(helpStyle.Render("hjkl/↑↓←→ move cursor · space grab & move card · a add · e edit · d del · n col · mouse drag · ? help · q quit"))
+		b.WriteString(helpStyle.Render("hjkl/↑↓←→ move cursor · space grab card · < > move column · a add · e edit · d del · n col · ? help · q quit"))
 	}
 	return b.String()
 }
@@ -296,5 +314,5 @@ move card  space to grab, then ←→ column / ↑↓ reorder, space to drop
            (H/L/J/K also move the selected card directly)
 mouse      click a card and drag it to any column to drop it
 cards      a add   e/enter edit   d/x delete   (empty edit deletes)
-columns    n new   r rename   D delete
+columns    n new   r rename   < / >  move left/right   D delete (asks first)
 other      s save (auto-saves on every change)   ? toggle help   q quit`

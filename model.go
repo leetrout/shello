@@ -47,6 +47,7 @@ type inputMode int
 const (
 	modeNormal inputMode = iota
 	modeInput
+	modeConfirm
 )
 
 type inputPurpose int
@@ -56,6 +57,14 @@ const (
 	purposeEditCard
 	purposeAddColumn
 	purposeRenameColumn
+)
+
+// confirmAction is the pending action a yes/no confirmation will carry out.
+type confirmAction int
+
+const (
+	confirmNone confirmAction = iota
+	confirmDeleteColumn
 )
 
 // drag holds the state of an in-progress mouse drag.
@@ -82,6 +91,9 @@ type Model struct {
 	mode    inputMode
 	purpose inputPurpose
 	input   textinput.Model
+
+	// confirm is the action awaiting a yes/no answer while mode == modeConfirm.
+	confirm confirmAction
 
 	drag drag
 
@@ -310,8 +322,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleMouse(msg)
 
 	case tea.KeyMsg:
-		if m.mode == modeInput {
+		switch m.mode {
+		case modeInput:
 			return m.handleInputKey(msg)
+		case modeConfirm:
+			return m.handleConfirmKey(msg)
 		}
 		return m.handleNormalKey(msg)
 	}
@@ -334,6 +349,21 @@ func (m Model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
+}
+
+// handleConfirmKey answers a pending yes/no confirmation. Any key other than
+// y/Y/enter cancels.
+func (m Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y", "enter":
+		switch m.confirm {
+		case confirmDeleteColumn:
+			m.deleteCurrentColumn()
+		}
+	}
+	m.mode = modeNormal
+	m.confirm = confirmNone
+	return m, nil
 }
 
 func (m *Model) applyInput(val string) {
@@ -438,6 +468,12 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "J", "shift+down":
 		m.moveCurrentCard(m.curCol, m.curCard+1)
 
+	// move the whole column left / right
+	case "<":
+		m.moveColumnBy(-1)
+	case ">":
+		m.moveColumnBy(1)
+
 	// editing
 	case "a":
 		if len(m.board.Columns) > 0 {
@@ -456,11 +492,36 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.startInput(purposeRenameColumn, "rename column…", m.board.Columns[m.curCol].Title)
 		}
 	case "D":
-		m.deleteCurrentColumn()
+		if len(m.board.Columns) > 0 {
+			m.mode = modeConfirm
+			m.confirm = confirmDeleteColumn
+		}
 	case "s":
 		m.save()
 	}
 	return m, nil
+}
+
+// moveColumnBy shifts the current column left (delta -1) or right (delta +1),
+// carrying its scroll offset and keeping it selected.
+func (m *Model) moveColumnBy(delta int) {
+	to := m.curCol + delta
+	if to < 0 || to >= len(m.board.Columns) {
+		return
+	}
+	m.ensureScrollLen()
+	m.board.Columns[m.curCol], m.board.Columns[to] = m.board.Columns[to], m.board.Columns[m.curCol]
+	m.colScroll[m.curCol], m.colScroll[to] = m.colScroll[to], m.colScroll[m.curCol]
+	m.curCol = to
+	m.clampCursor()
+	m.save()
+}
+
+// ensureScrollLen grows colScroll so it has an entry per column.
+func (m *Model) ensureScrollLen() {
+	for len(m.colScroll) < len(m.board.Columns) {
+		m.colScroll = append(m.colScroll, 0)
+	}
 }
 
 // handleGrabbedKey processes keys while a card is picked up: movement keys
@@ -563,7 +624,7 @@ func (m *Model) deleteCurrentColumn() {
 }
 
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if m.mode == modeInput {
+	if m.mode != modeNormal {
 		return m, nil
 	}
 
