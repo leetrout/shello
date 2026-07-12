@@ -2,6 +2,8 @@
 package main
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
 	"github.com/spf13/pflag"
@@ -10,9 +12,22 @@ import (
 	"github.com/leetrout/shello/internal/tui"
 )
 
+// Build metadata, injected by GoReleaser via -ldflags (see .goreleaser.yaml).
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	path := pflag.StringP("file", "f", "shello.json", "path to the board JSON file")
+	showVersion := pflag.BoolP("version", "v", false, "print version and exit")
 	pflag.Parse()
+
+	if *showVersion {
+		fmt.Printf("shello %s (%s) built %s\n", version, commit, date)
+		return
+	}
 
 	b, err := board.Load(*path)
 	if err != nil {

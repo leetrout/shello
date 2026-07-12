@@ -6,6 +6,8 @@ go = "1.26"
 "go:gotest.tools/gotestsum" = "latest"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 "aqua:golangci/golangci-lint" = "latest"
+"aqua:goreleaser/goreleaser" = "latest"
+"aqua:anchore/syft" = "latest"
 prek = "latest"
 
 [tasks.fmt]
@@ -43,6 +45,18 @@ run = "go build -o bin/shello ./cmd/shello"
 [tasks.run]
 description = "Run shello"
 run = "go run ./cmd/shello"
+
+[tasks.release-check]
+description = "Validate the GoReleaser config"
+run = "goreleaser check"
+
+[tasks.release-snapshot]
+description = "Build a local snapshot release (cross-compiled binaries in ./dist, no publish)"
+run = "goreleaser release --snapshot --clean"
+
+[tasks.release]
+description = "Cut a release with GoReleaser (runs in CI on tag push; needs GITHUB_TOKEN)"
+run = "goreleaser release --clean"
 
 [tasks.check]
 description = "Everything CI runs: format check + vet + lint + test"

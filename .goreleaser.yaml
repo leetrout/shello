@@ -1,0 +1,66 @@
+# GoReleaser config — cross-compile, archive, checksum, SBOM, changelog, GitHub release.
+# Docs: https://goreleaser.com
+#
+# Local dry run:  mise run release-snapshot
+# Real release:   push a tag (vX.Y.Z); CI runs `mise run release`.
+version: 2
+
+project_name: shello
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: shello
+    main: ./cmd/shello
+    binary: shello
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .CommitDate }}
+
+archives:
+  - id: shello
+    formats: [tar.gz]
+    # Naming that ubi/aqua can match on OS + arch (see README "Install with mise").
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: "checksums.txt"
+
+sboms:
+  - artifacts: archive
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "Merge pull request"
+      - "Merge branch"
+
+release:
+  github:
+    owner: leetrout
+    name: shello
+  draft: false
+  prerelease: auto

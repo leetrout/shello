@@ -22,7 +22,26 @@ keyboard or the mouse — drag-and-drop included.
 
 ## Install
 
-Requires Go 1.26+. Tooling is managed with [mise](https://mise.jdx.dev):
+### With mise (recommended)
+
+`shello` ships prebuilt binaries with every release, so [mise](https://mise.jdx.dev)
+can install and pin it directly from GitHub — no toolchain required:
+
+```bash
+mise use -g ubi:leetrout/shello        # latest, on your PATH
+mise use -g ubi:leetrout/shello@0.1.0  # or pin a version
+```
+
+Prefer a one-off? `mise x ubi:leetrout/shello -- shello`.
+
+### From a release archive
+
+Grab the archive for your OS/arch from the [releases page](https://github.com/leetrout/shello/releases),
+verify it against `checksums.txt`, extract, and put `shello` on your PATH.
+
+### From source
+
+Requires Go 1.26+. Tooling is managed with mise:
 
 ```bash
 mise install        # installs the pinned Go toolchain + dev tools
@@ -130,6 +149,24 @@ mise run check      # fmt-check + vet + lint + test (what CI runs)
 ```
 
 Git hooks are managed with [prek](https://github.com/j178/prek): `prek install`.
+
+### Releasing
+
+Releases are cut by [GoReleaser](https://goreleaser.com) — it cross-compiles the
+binaries, builds archives with checksums and an SBOM, and creates the GitHub
+release with a generated changelog. Tag and push to trigger it:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0   # .github/workflows/release.yml runs `mise run release`
+```
+
+Dry-run the whole thing locally first (writes to `./dist`, publishes nothing):
+
+```bash
+mise run release-check     # validate .goreleaser.yaml
+mise run release-snapshot  # cross-compile + archive locally
+```
 
 ### Layout
 
