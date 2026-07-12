@@ -1,0 +1,64 @@
+# golangci-lint v2 config. Standard set (staticcheck, govet, errcheck,
+# ineffassign, unused) plus a broad revive ruleset. Formatting is handled by the
+# formatters block (gofumpt + goimports + golines), matching `mise run fmt`.
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - revive
+  settings:
+    revive:
+      rules:
+        - name: line-length-limit
+          arguments: [120]
+        - name: unhandled-error
+          # These are safe to ignore unhandled: printing to stdio and buffer writes.
+          arguments:
+            - "fmt\\.Print.*"
+            - "fmt\\.Fprint.*"
+            - "strings\\.Builder\\.Write.*"
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: errorf
+        - name: empty-block
+        - name: superfluous-else
+        - name: unreachable-code
+        - name: redefines-builtin-id
+        - name: var-declaration
+        - name: var-naming
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+  exclusions:
+    generated: lax
+    rules:
+      # Table-driven tests keep struct literals dense; don't force field names.
+      - path: _test\.go
+        linters:
+          - revive
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+    - golines
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/leetrout/shello
+    golines:
+      max-len: 120

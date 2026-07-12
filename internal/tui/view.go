@@ -1,9 +1,11 @@
-package main
+package tui
 
 import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/leetrout/shello/internal/board"
 )
 
 // Base styles carry colours only; width/height are applied per-render because
@@ -147,6 +149,7 @@ func wrapText(s string, width int) []string {
 	return lines
 }
 
+// View implements tea.Model, rendering the whole board, header, and footer.
 func (m Model) View() string {
 	if m.width == 0 {
 		return "starting shello…"
@@ -177,7 +180,7 @@ func (m Model) View() string {
 	return b.String()
 }
 
-func (m Model) renderColumn(i int, col Column, w, h int) string {
+func (m Model) renderColumn(i int, col board.Column, w, h int) string {
 	container := lipgloss.NewStyle().
 		Width(w).
 		Height(h).
@@ -199,9 +202,7 @@ func (m Model) renderColumn(i int, col Column, w, h int) string {
 			style = cardSelected
 		}
 		wrapped := strings.Join(wrapText(card.Title, w-2), "\n")
-		for _, ln := range strings.Split(style.Width(w).Render(wrapped), "\n") {
-			cardRows = append(cardRows, ln)
-		}
+		cardRows = append(cardRows, strings.Split(style.Width(w).Render(wrapped), "\n")...)
 		cardRows = append(cardRows, sepStyle.Width(w).Render("")) // spacer row
 	}
 	if len(col.Cards) == 0 {
@@ -215,11 +216,9 @@ func (m Model) renderColumn(i int, col Column, w, h int) string {
 	if end > len(cardRows) {
 		end = len(cardRows)
 	}
-	visible := cardRows
+	var visible []string
 	if scroll < len(cardRows) {
 		visible = cardRows[scroll:end]
-	} else {
-		visible = nil
 	}
 
 	// header: title (with scroll hints) + separator
@@ -304,10 +303,13 @@ func (m Model) renderFooter() string {
 	if m.showHelp {
 		b.WriteString(helpStyle.Render(fullHelp))
 	} else {
-		b.WriteString(helpStyle.Render("hjkl/↑↓←→ move cursor · space grab card · < > move column · a add · e edit · d del · n col · ? help · q quit"))
+		b.WriteString(helpStyle.Render(shortHelp))
 	}
 	return b.String()
 }
+
+const shortHelp = "hjkl/↑↓←→ move cursor · space grab card · < > move column · " +
+	"a add · e edit · d del · n col · ? help · q quit"
 
 const fullHelp = `navigate   ←/→/h/l columns   ↑/↓/j/k cards   g/G top/bottom
 move card  space to grab, then ←→ column / ↑↓ reorder, space to drop

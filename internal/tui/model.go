@@ -1,8 +1,12 @@
-package main
+// Package tui implements shello's Bubble Tea terminal UI: the kanban board
+// model, its update logic (keyboard + mouse), and rendering.
+package tui
 
 import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/leetrout/shello/internal/board"
 )
 
 // Layout constants (in terminal cells). Column width is computed at runtime
@@ -69,17 +73,17 @@ const (
 
 // drag holds the state of an in-progress mouse drag.
 type drag struct {
-	active   bool
-	fromCol  int
-	fromIdx  int
-	overCol  int // column the cursor is currently over (-1 if none)
-	overIdx  int // insertion index within overCol
-	title    string
+	active  bool
+	fromCol int
+	fromIdx int
+	overCol int // column the cursor is currently over (-1 if none)
+	overIdx int // insertion index within overCol
+	title   string
 }
 
 // Model is the Bubble Tea model for the whole app.
 type Model struct {
-	board    Board
+	board    board.Board
 	path     string
 	width    int
 	height   int
@@ -105,13 +109,13 @@ type Model struct {
 	colScroll []int
 }
 
-// NewModel builds the initial model.
-func NewModel(board Board, path string) Model {
+// New builds the initial model for the given board and save path.
+func New(b board.Board, path string) Model {
 	ti := textinput.New()
 	ti.CharLimit = 120
 	ti.Prompt = "› "
 	return Model{
-		board:  board,
+		board:  b,
 		path:   path,
 		curCol: 0,
 		input:  ti,
@@ -119,6 +123,7 @@ func NewModel(board Board, path string) Model {
 	}
 }
 
+// Init implements tea.Model; shello needs no startup command.
 func (m Model) Init() tea.Cmd { return nil }
 
 // ---- helpers ----
@@ -214,8 +219,8 @@ func (m Model) scrollFor(col int) int {
 	if col >= 0 && col < len(m.colScroll) {
 		s = m.colScroll[col]
 	}
-	if max := m.maxScroll(col); s > max {
-		s = max
+	if limit := m.maxScroll(col); s > limit {
+		s = limit
 	}
 	if s < 0 {
 		s = 0
@@ -231,8 +236,8 @@ func (m *Model) setScroll(col, v int) {
 	for len(m.colScroll) <= col {
 		m.colScroll = append(m.colScroll, 0)
 	}
-	if max := m.maxScroll(col); v > max {
-		v = max
+	if limit := m.maxScroll(col); v > limit {
+		v = limit
 	}
 	if v < 0 {
 		v = 0
@@ -312,6 +317,7 @@ func (m Model) hitCard(col, y int) int {
 
 // ---- update ----
 
+// Update implements tea.Model, dispatching key and mouse messages by mode.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -373,7 +379,7 @@ func (m *Model) applyInput(val string) {
 			return
 		}
 		c := &m.board.Columns[m.curCol]
-		c.Cards = append(c.Cards, Card{Title: val})
+		c.Cards = append(c.Cards, board.Card{Title: val})
 		m.curCard = len(c.Cards) - 1
 	case purposeEditCard:
 		if len(m.board.Columns) == 0 {
@@ -392,7 +398,7 @@ func (m *Model) applyInput(val string) {
 		if val == "" {
 			return
 		}
-		m.board.Columns = append(m.board.Columns, Column{Title: val})
+		m.board.Columns = append(m.board.Columns, board.Column{Title: val})
 		m.curCol = len(m.board.Columns) - 1
 		m.curCard = 0
 	case purposeRenameColumn:
@@ -572,7 +578,7 @@ func (m *Model) grabMove(colDelta, rowDelta int) {
 		}
 	}
 
-	nc, ni := m.board.moveCard(m.curCol, m.curCard, toCol, toIdx)
+	nc, ni := m.board.MoveCard(m.curCol, m.curCard, toCol, toIdx)
 	m.curCol, m.curCard = nc, ni
 	m.clampCursor()
 	m.save()
@@ -589,7 +595,7 @@ func (m *Model) moveCurrentCard(toCol, toIdx int) {
 	if toIdx < 0 {
 		toIdx = len(m.board.Columns[toCol].Cards)
 	}
-	nc, ni := m.board.moveCard(m.curCol, m.curCard, toCol, toIdx)
+	nc, ni := m.board.MoveCard(m.curCol, m.curCard, toCol, toIdx)
 	m.curCol, m.curCard = nc, ni
 	m.clampCursor()
 	m.save()
@@ -695,7 +701,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if d.overCol == d.fromCol && toIdx > d.fromIdx {
 			toIdx--
 		}
-		nc, ni := m.board.moveCard(d.fromCol, d.fromIdx, d.overCol, toIdx)
+		nc, ni := m.board.MoveCard(d.fromCol, d.fromIdx, d.overCol, toIdx)
 		m.curCol, m.curCard = nc, ni
 		m.clampCursor()
 		m.save()

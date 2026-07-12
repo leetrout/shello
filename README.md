@@ -22,28 +22,29 @@ keyboard or the mouse — drag-and-drop included.
 
 ## Install
 
-Requires Go 1.26+.
+Requires Go 1.26+. Tooling is managed with [mise](https://mise.jdx.dev):
 
 ```bash
-go build -o shello .
-./shello
+mise install        # installs the pinned Go toolchain + dev tools
+mise run build      # -> ./bin/shello
+./bin/shello
 ```
 
 Or run without building:
 
 ```bash
-go run .
+mise run run        # or: go run ./cmd/shello
 ```
 
 ## Usage
 
 ```bash
-shello [-file path/to/board.json]
+shello [-f path/to/board.json]
 ```
 
 The board is stored as JSON and **auto-saves on every change**. By default it
-lives in `shello.json` in the current directory; point `-file` elsewhere to keep
-multiple boards. On first run you get a small starter board.
+lives in `shello.json` in the current directory; point `--file`/`-f` elsewhere to
+keep multiple boards. On first run you get a small starter board.
 
 ## Keys
 
@@ -117,14 +118,26 @@ writes it back on every change.
 
 ## Development
 
+Tooling (Go, gofumpt, goimports, golines, golangci-lint, gotestsum, govulncheck) is
+pinned in `.mise.toml`. The same mise tasks run locally and in CI:
+
 ```bash
-go test ./...   # unit tests for card moves, wrapping, scrolling, hit-testing
-go vet ./...
+mise run fmt        # gofumpt + goimports + golines
+mise run lint       # golangci-lint (default set + revive, 120-col)
+mise run test       # gotestsum
+mise run vulncheck  # govulncheck
+mise run check      # fmt-check + vet + lint + test (what CI runs)
 ```
 
-| File | Role |
+Git hooks are managed with [prek](https://github.com/j178/prek): `prek install`.
+
+### Layout
+
+| Path | Role |
 | --- | --- |
-| `board.go` | `Board`/`Column`/`Card` model, JSON load/save, `moveCard` |
-| `model.go` | Bubble Tea model: keyboard + mouse handling, scroll & hit-testing geometry |
-| `view.go` | Lip Gloss rendering, text wrapping |
-| `main.go` | entry point and flags |
+| `cmd/shello/` | entry point and flags (`pflag`, `charmbracelet/log`) |
+| `internal/board/` | `Board`/`Column`/`Card` model, JSON load/save, `MoveCard` |
+| `internal/tui/model.go` | Bubble Tea model: keyboard + mouse handling, scroll & hit-testing geometry |
+| `internal/tui/view.go` | Lip Gloss rendering, text wrapping |
+
+See [`docs/adr/`](docs/adr/) for architecture decisions.

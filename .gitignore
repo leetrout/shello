@@ -1,2 +1,9 @@
-shello
-shello.json
+# Build output
+/bin/
+/shello
+
+# Local board data
+/shello.json
+
+# Scratch / experiments
+/scratch/

@@ -1,0 +1,49 @@
+[tools]
+go = "1.26"
+"go:mvdan.cc/gofumpt" = "latest"
+"go:github.com/segmentio/golines" = "latest"
+"go:golang.org/x/tools/cmd/goimports" = "latest"
+"go:gotest.tools/gotestsum" = "latest"
+"go:golang.org/x/vuln/cmd/govulncheck" = "latest"
+"aqua:golangci/golangci-lint" = "latest"
+prek = "latest"
+
+[tasks.fmt]
+description = "Format Go: golines (wrap) → goimports (imports) → gofumpt (final)"
+run = [
+  "golines -w -m 120 .",
+  "goimports -w .",
+  "gofumpt -w .",
+]
+
+[tasks.fmt-check]
+description = "Check formatting without writing (fails if gofumpt would change anything)"
+run = "test -z \"$(gofumpt -l .)\" || { echo 'needs gofumpt; run: mise run fmt'; gofumpt -l .; exit 1; }"
+
+[tasks.vet]
+description = "go vet"
+run = "go vet ./..."
+
+[tasks.lint]
+description = "Lint with golangci-lint (default set + revive, 120-col)"
+run = "golangci-lint run"
+
+[tasks.test]
+description = "Run tests with gotestsum (readable output)"
+run = "gotestsum --format pkgname -- ./..."
+
+[tasks.vulncheck]
+description = "Scan for known vulnerabilities"
+run = "govulncheck ./..."
+
+[tasks.build]
+description = "Build the shello binary into ./bin"
+run = "go build -o bin/shello ./cmd/shello"
+
+[tasks.run]
+description = "Run shello"
+run = "go run ./cmd/shello"
+
+[tasks.check]
+description = "Everything CI runs: format check + vet + lint + test"
+depends = ["fmt-check", "vet", "lint", "test"]

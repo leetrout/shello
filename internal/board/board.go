@@ -1,4 +1,5 @@
-package main
+// Package board holds shello's kanban data model and its JSON persistence.
+package board
 
 import (
 	"encoding/json"
@@ -22,8 +23,8 @@ type Board struct {
 	Columns []Column `json:"columns"`
 }
 
-// defaultBoard returns a starter board so a first run isn't empty.
-func defaultBoard() Board {
+// Default returns a starter board so a first run isn't empty.
+func Default() Board {
 	return Board{Columns: []Column{
 		{Title: "Todo", Cards: []Card{
 			{Title: "Welcome to shello 👋"},
@@ -39,12 +40,12 @@ func defaultBoard() Board {
 	}}
 }
 
-// LoadBoard reads a board from path, returning a default board if the file
-// does not exist. Any other error is returned to the caller.
-func LoadBoard(path string) (Board, error) {
+// Load reads a board from path, returning a default board if the file does not
+// exist. Any other error is returned to the caller.
+func Load(path string) (Board, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return defaultBoard(), nil
+		return Default(), nil
 	}
 	if err != nil {
 		return Board{}, err
@@ -73,10 +74,10 @@ func (b Board) Save(path string) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
-// moveCard removes the card at (fromCol, fromIdx) and inserts it into toCol at
+// MoveCard removes the card at (fromCol, fromIdx) and inserts it into toCol at
 // toIdx, clamping indices so it is always safe to call. It returns the resting
 // (column, index) of the moved card.
-func (b *Board) moveCard(fromCol, fromIdx, toCol, toIdx int) (int, int) {
+func (b *Board) MoveCard(fromCol, fromIdx, toCol, toIdx int) (int, int) {
 	if fromCol < 0 || fromCol >= len(b.Columns) {
 		return fromCol, fromIdx
 	}
