@@ -195,6 +195,103 @@ func TestDeleteColumnConfirmation(t *testing.T) {
 	assert.Equal(t, []string{"Doing", "Done"}, colTitles(m), "enter confirms the delete")
 }
 
+// ---- undo / redo ----
+
+func cardTitles(m Model, col int) []string {
+	out := make([]string, len(m.board.Columns[col].Cards))
+	for i, c := range m.board.Columns[col].Cards {
+		out[i] = c.Title
+	}
+	return out
+}
+
+func TestUndoRedoCardMove(t *testing.T) {
+	m := newModel(t, sample(), 100, 40)
+	require.Equal(t, []string{"a0", "a1", "a2"}, cardTitles(m, 0))
+
+	// move a0 from column A into column B
+	m = send(m, key("L"))
+	require.Equal(t, []string{"a1", "a2"}, cardTitles(m, 0), "card left source column")
+	require.Equal(t, []string{"b0", "a0"}, cardTitles(m, 1), "card landed in target column")
+
+	m = send(m, key("u"))
+	assert.Equal(t, []string{"a0", "a1", "a2"}, cardTitles(m, 0), "undo restores source column")
+	assert.Equal(t, []string{"b0"}, cardTitles(m, 1), "undo restores target column")
+	assert.Equal(t, 0, m.curCol, "undo restores the cursor column")
+	assert.Equal(t, 0, m.curCard, "undo restores the cursor card")
+
+	m = send(m, tea.KeyMsg{Type: tea.KeyCtrlR})
+	assert.Equal(t, []string{"a1", "a2"}, cardTitles(m, 0), "redo re-applies the move")
+	assert.Equal(t, []string{"b0", "a0"}, cardTitles(m, 1), "redo re-applies the move")
+}
+
+func TestUndoStacksMultipleEdits(t *testing.T) {
+	m := newModel(t, sample(), 100, 40)
+
+	m = send(m, key("d")) // delete a0
+	m = send(m, key("d")) // delete a1
+	require.Equal(t, []string{"a2"}, cardTitles(m, 0))
+
+	m = send(m, key("u"))
+	assert.Equal(t, []string{"a1", "a2"}, cardTitles(m, 0), "first undo brings back a1")
+	m = send(m, key("u"))
+	assert.Equal(t, []string{"a0", "a1", "a2"}, cardTitles(m, 0), "second undo brings back a0")
+}
+
+func TestNewEditClearsRedo(t *testing.T) {
+	m := newModel(t, sample(), 100, 40)
+
+	m = send(m, key("d")) // delete a0
+	m = send(m, key("u")) // undo → redo now has one entry
+	require.Len(t, m.redo, 1)
+
+	m = send(m, key("d")) // a fresh edit must drop the redo branch
+	assert.Empty(t, m.redo, "a new edit clears the redo stack")
+}
+
+func TestUndoRedoNoOpWhenEmpty(t *testing.T) {
+	m := newModel(t, sample(), 100, 40)
+
+	m = send(m, key("u"))
+	assert.Equal(t, "nothing to undo", m.status)
+	assert.Empty(t, m.undo)
+
+	m = send(m, tea.KeyMsg{Type: tea.KeyCtrlR})
+	assert.Equal(t, "nothing to redo", m.status)
+}
+
+func TestGrabIsOneUndoEntry(t *testing.T) {
+	m := newModel(t, sample(), 100, 40)
+
+	m = send(m, key(" ")) // grab a0
+	require.True(t, m.grabbed)
+	m = send(m, key("l")) // carry into column B (multi-step in general)
+	require.Empty(t, m.undo, "no undo recorded mid-grab")
+
+	m = send(m, key(" ")) // drop
+	require.False(t, m.grabbed)
+	require.Len(t, m.undo, 1, "the whole grab is a single undo entry")
+
+	// one undo reverses the entire move
+	m = send(m, key("u"))
+	assert.Equal(t, []string{"a0", "a1", "a2"}, cardTitles(m, 0), "undo restores source column")
+	assert.Equal(t, []string{"b0"}, cardTitles(m, 1), "undo restores target column")
+}
+
+func TestGrabWithoutMoveRecordsNothing(t *testing.T) {
+	m := newModel(t, sample(), 100, 40)
+	m = send(m, key(" ")) // grab
+	m = send(m, key(" ")) // drop without moving
+	assert.Empty(t, m.undo, "a grab that changes nothing is not recorded")
+}
+
+func TestCursorMoveIsNotUndoable(t *testing.T) {
+	m := newModel(t, sample(), 100, 40)
+	m = send(m, key("l")) // pure navigation
+	m = send(m, key("j"))
+	assert.Empty(t, m.undo, "moving the cursor records no undo state")
+}
+
 // ---- rendering ----
 
 func TestViewReflectsCursor(t *testing.T) {

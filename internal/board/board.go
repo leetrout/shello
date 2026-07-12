@@ -23,6 +23,19 @@ type Board struct {
 	Columns []Column `json:"columns"`
 }
 
+// Clone returns a deep copy of the board that shares no slice backing arrays
+// with the original, so one can be mutated while the other is kept (e.g. on an
+// undo stack).
+func (b Board) Clone() Board {
+	cols := make([]Column, len(b.Columns))
+	for i, c := range b.Columns {
+		cards := make([]Card, len(c.Cards))
+		copy(cards, c.Cards) // Card is value-only, so a shallow copy suffices
+		cols[i] = Column{Title: c.Title, Cards: cards}
+	}
+	return Board{Columns: cols}
+}
+
 // Default returns a starter board so a first run isn't empty.
 func Default() Board {
 	return Board{Columns: []Column{

@@ -3,6 +3,8 @@
 package tui
 
 import (
+	"reflect"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -107,7 +109,28 @@ type Model struct {
 
 	// colScroll[i] is the number of card rows scrolled off the top of column i.
 	colScroll []int
+
+	// undo/redo hold board snapshots. Every mutation pushes the pre-image onto
+	// undo (see Update); undoing moves it to redo and vice versa.
+	undo []snapshot
+	redo []snapshot
+
+	// grabStart is the pre-grab snapshot captured when a card is picked up. The
+	// whole grab-and-move is recorded as a single undo entry when it is dropped,
+	// so undo can't step through it a column at a time.
+	grabStart *snapshot
 }
+
+// snapshot is a point-in-time copy of the board and cursor for undo/redo. The
+// board is deep-cloned so it can't alias live state.
+type snapshot struct {
+	board   board.Board
+	curCol  int
+	curCard int
+}
+
+// maxUndo bounds how many snapshots each stack retains.
+const maxUndo = 100
 
 // New builds the initial model for the given board and save path.
 func New(b board.Board, path string) Model {
@@ -317,8 +340,101 @@ func (m Model) hitCard(col, y int) int {
 
 // ---- update ----
 
-// Update implements tea.Model, dispatching key and mouse messages by mode.
+// Update implements tea.Model. It intercepts undo/redo, then dispatches the
+// message and records an undo snapshot if the board changed as a result. This
+// single choke point means individual mutations don't have to remember to push
+// their own undo state.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Undo/redo restore state directly and must not themselves be recorded.
+	if k, ok := msg.(tea.KeyMsg); ok && m.mode == modeNormal && !m.grabbed {
+		switch k.String() {
+		case "u":
+			return m.undoLast(), nil
+		case "ctrl+r":
+			return m.redoLast(), nil
+		}
+	}
+
+	wasGrabbed := m.grabbed
+	before := m.snapshot()
+	updated, cmd := m.dispatch(msg)
+	mm := updated.(Model)
+
+	switch {
+	case !wasGrabbed && mm.grabbed:
+		// Card picked up: stash the pre-grab state; recording waits for the drop.
+		mm.grabStart = &before
+	case wasGrabbed && mm.grabbed:
+		// Mid-grab movement: individual steps are not recorded.
+	case wasGrabbed && !mm.grabbed:
+		// Dropped: record the entire grab as a single undoable action.
+		if mm.grabStart != nil && !reflect.DeepEqual(mm.grabStart.board, mm.board) {
+			mm.pushUndo(*mm.grabStart)
+		}
+		mm.grabStart = nil
+	default:
+		if !reflect.DeepEqual(before.board, mm.board) {
+			mm.pushUndo(before)
+		}
+	}
+	return mm, cmd
+}
+
+// pushUndo records a pre-mutation snapshot, capping the stack and invalidating
+// the redo branch (a fresh edit forks history).
+func (m *Model) pushUndo(s snapshot) {
+	m.undo = append(m.undo, s)
+	if len(m.undo) > maxUndo {
+		m.undo = m.undo[len(m.undo)-maxUndo:]
+	}
+	m.redo = nil
+}
+
+// snapshot captures the current board (deep-cloned) and cursor.
+func (m Model) snapshot() snapshot {
+	return snapshot{board: m.board.Clone(), curCol: m.curCol, curCard: m.curCard}
+}
+
+// restore replaces the board and cursor from a snapshot, cloning so the stack
+// entry can't alias live state, then reconciles cursor/scroll and persists.
+func (m *Model) restore(s snapshot) {
+	m.board = s.board.Clone()
+	m.curCol, m.curCard = s.curCol, s.curCard
+	m.clampCursor()
+	m.save()
+}
+
+// undoLast reverts to the most recent snapshot, pushing the current state onto
+// the redo stack.
+func (m Model) undoLast() Model {
+	if len(m.undo) == 0 {
+		m.status = "nothing to undo"
+		return m
+	}
+	m.redo = append(m.redo, m.snapshot())
+	last := m.undo[len(m.undo)-1]
+	m.undo = m.undo[:len(m.undo)-1]
+	m.restore(last)
+	m.status = "undo"
+	return m
+}
+
+// redoLast re-applies the most recently undone snapshot.
+func (m Model) redoLast() Model {
+	if len(m.redo) == 0 {
+		m.status = "nothing to redo"
+		return m
+	}
+	m.undo = append(m.undo, m.snapshot())
+	next := m.redo[len(m.redo)-1]
+	m.redo = m.redo[:len(m.redo)-1]
+	m.restore(next)
+	m.status = "redo"
+	return m
+}
+
+// dispatch routes a message to the right handler by mode.
+func (m Model) dispatch(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
