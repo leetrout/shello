@@ -18,8 +18,8 @@ func titles(c Column) []string {
 
 func sample() Board {
 	return Board{Columns: []Column{
-		{Title: "A", Cards: []Card{{"a0"}, {"a1"}, {"a2"}}},
-		{Title: "B", Cards: []Card{{"b0"}}},
+		{Title: "A", Cards: []Card{{Title: "a0"}, {Title: "a1"}, {Title: "a2"}}},
+		{Title: "B", Cards: []Card{{Title: "b0"}}},
 	}}
 }
 
@@ -60,6 +60,20 @@ func TestMoveCard(t *testing.T) {
 			assert.Equal(t, tt.wantB, titles(b.Columns[1]), "column B")
 		})
 	}
+}
+
+func TestNoteRoundTrips(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "board.json")
+	b := Board{Columns: []Column{{Title: "A", Cards: []Card{
+		{Title: "a0", Note: "notes/a0.md"},
+		{Title: "a1"}, // no note
+	}}}}
+	require.NoError(t, b.Save(p))
+
+	got, err := Load(p)
+	require.NoError(t, err)
+	assert.Equal(t, "notes/a0.md", got.Columns[0].Cards[0].Note, "note path survives save/load")
+	assert.Empty(t, got.Columns[0].Cards[1].Note, "an unset note stays empty (omitempty)")
 }
 
 func TestMoveCardOutOfRangeIsNoOp(t *testing.T) {

@@ -8,9 +8,12 @@ import (
 	"sort"
 )
 
-// Card is a single Trello-style card.
+// Card is a single Trello-style card. Note, when set, is a path to a markdown
+// file holding the card's long-form context; it is resolved relative to the
+// directory of the board file (see internal/tui). Empty means no attachment.
 type Card struct {
 	Title string `json:"title"`
+	Note  string `json:"note,omitempty"`
 }
 
 // Column is a Trello-style list holding an ordered set of cards.

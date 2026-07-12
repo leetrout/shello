@@ -160,6 +160,45 @@ func TestGrabMoveCard(t *testing.T) {
 	assert.False(t, m.grabbed, "space drops the card")
 }
 
+// ---- notes ----
+
+func TestAttachNoteAndMarker(t *testing.T) {
+	m := newModel(t, sample(), 100, 40) // cursor starts on a0
+
+	m = send(m, key("o")) // no note yet → prompt to attach a path
+	require.Equal(t, modeInput, m.mode, "o on a note-less card opens the attach prompt")
+	require.Equal(t, purposeAttachNote, m.purpose)
+
+	m = send(m, key("notes/a0.md"))
+	m = send(m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	assert.Equal(t, modeNormal, m.mode, "returns to normal mode after attaching")
+	assert.Equal(t, "notes/a0.md", m.board.Columns[0].Cards[0].Note, "path attached to the card")
+	assert.Contains(t, cardDisplay(m.board.Columns[0].Cards[0]), "📎", "attached card shows the marker")
+	assert.NotContains(t, cardDisplay(m.board.Columns[0].Cards[1]), "📎", "note-less card has no marker")
+
+	m = send(m, key("u"))
+	assert.Empty(t, m.board.Columns[0].Cards[0].Note, "attaching a note is undoable")
+}
+
+func TestNotePathResolvesAgainstBoardDir(t *testing.T) {
+	m := New(sample(), "/work/proj/board.json")
+	assert.Equal(t, "/work/proj/notes/a0.md", m.notePath("notes/a0.md"), "relative note joins the board dir")
+	assert.Equal(t, "/etc/plan.md", m.notePath("/etc/plan.md"), "absolute note is used as-is")
+}
+
+func TestEditorCommandPrefersVisualThenEditorThenVi(t *testing.T) {
+	t.Setenv("VISUAL", "code -w")
+	t.Setenv("EDITOR", "nano")
+	assert.Equal(t, []string{"code", "-w"}, editorCommand(), "VISUAL wins and splits into argv")
+
+	t.Setenv("VISUAL", "")
+	assert.Equal(t, []string{"nano"}, editorCommand(), "falls back to EDITOR")
+
+	t.Setenv("EDITOR", "  ")
+	assert.Equal(t, []string{"vi"}, editorCommand(), "blank env falls back to vi")
+}
+
 // ---- move columns ----
 
 func TestMoveColumn(t *testing.T) {

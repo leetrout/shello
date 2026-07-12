@@ -3,8 +3,12 @@
 package tui
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -64,6 +68,7 @@ const (
 	purposeEditCard
 	purposeAddColumn
 	purposeRenameColumn
+	purposeAttachNote
 )
 
 // confirmAction is the pending action a yes/no confirmation will carry out.
@@ -194,6 +199,47 @@ func (m *Model) save() {
 	m.status = "saved → " + m.path
 }
 
+// noteEditedMsg is delivered when the external editor launched by openNote exits.
+type noteEditedMsg struct {
+	path string
+	err  error
+}
+
+// editorCommand is the user's $VISUAL/$EDITOR split into command + args, falling
+// back to vi. It's a slice so values like "code -w" work.
+func editorCommand() []string {
+	for _, env := range []string{"VISUAL", "EDITOR"} {
+		if fields := strings.Fields(os.Getenv(env)); len(fields) > 0 {
+			return fields
+		}
+	}
+	return []string{"vi"}
+}
+
+// notePath resolves a card's note (which may be relative) against the directory
+// of the board file, so a board stays portable regardless of the cwd.
+func (m Model) notePath(note string) string {
+	if filepath.IsAbs(note) {
+		return note
+	}
+	return filepath.Join(filepath.Dir(m.path), note)
+}
+
+// openNote suspends the TUI and opens the selected card's note in the user's
+// editor, creating parent directories so a brand-new note saves cleanly.
+func (m Model) openNote() tea.Cmd {
+	note := m.board.Columns[m.curCol].Cards[m.curCard].Note
+	p := m.notePath(note)
+	if dir := filepath.Dir(p); dir != "" {
+		_ = os.MkdirAll(dir, 0o755)
+	}
+	argv := editorCommand()
+	c := exec.Command(argv[0], append(argv[1:], p)...) //nolint:gosec // path is user-chosen, editor from env
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return noteEditedMsg{path: p, err: err}
+	})
+}
+
 // cardsTopAbs is the absolute screen row where a column's cards begin.
 func cardsTopAbs() int { return boardTop + colHeaderH }
 
@@ -207,7 +253,7 @@ func (m Model) columnCardLayout(col int) (tops, heights []int) {
 	innerW := m.colWidth() - 2
 	offset := 0
 	for _, c := range m.board.Columns[col].Cards {
-		h := len(wrapText(c.Title, innerW))
+		h := len(wrapText(cardDisplay(c), innerW))
 		if h < 1 {
 			h = 1
 		}
@@ -461,6 +507,14 @@ func (m Model) dispatch(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
 
+	case noteEditedMsg:
+		if msg.err != nil {
+			m.status = "note: " + msg.err.Error()
+		} else {
+			m.status = "edited note → " + msg.path
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		switch m.mode {
 		case modeInput:
@@ -538,6 +592,16 @@ func (m *Model) applyInput(val string) {
 	case purposeRenameColumn:
 		if val != "" && len(m.board.Columns) > 0 {
 			m.board.Columns[m.curCol].Title = val
+		}
+	case purposeAttachNote:
+		if len(m.board.Columns) == 0 {
+			return
+		}
+		c := &m.board.Columns[m.curCol]
+		if m.curCard >= 0 && m.curCard < len(c.Cards) {
+			// A blank path clears the attachment; otherwise it's stored verbatim
+			// and resolved relative to the board file when opened.
+			c.Cards[m.curCard].Note = strings.TrimSpace(val)
 		}
 	}
 	m.clampCursor()
@@ -639,6 +703,18 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.board.Columns) > 0 && len(m.board.Columns[m.curCol].Cards) > 0 {
 			m.startInput(purposeEditCard, "edit card…", m.board.Columns[m.curCol].Cards[m.curCard].Title)
 		}
+	// open the selected card's attached markdown note in $EDITOR; if it has none,
+	// prompt for a path to attach (editing the JSON by hand would be clobbered by
+	// the next auto-save while the TUI is running).
+	case "o":
+		if len(m.board.Columns) == 0 || len(m.board.Columns[m.curCol].Cards) == 0 {
+			return m, nil
+		}
+		if m.board.Columns[m.curCol].Cards[m.curCard].Note == "" {
+			m.startInput(purposeAttachNote, "attach note path (.md)…", "")
+			return m, nil
+		}
+		return m, m.openNote()
 	case "d", "x":
 		if len(m.selected) > 0 {
 			m.deleteMarked()

@@ -208,7 +208,7 @@ func (m Model) renderColumn(i int, col board.Column, w, h int) string {
 		case m.isMarked(i, j):
 			style = cardMarked
 		}
-		wrapped := strings.Join(wrapText(card.Title, w-2), "\n")
+		wrapped := strings.Join(wrapText(cardDisplay(card), w-2), "\n")
 		cardRows = append(cardRows, strings.Split(style.Width(w).Render(wrapped), "\n")...)
 		cardRows = append(cardRows, sepStyle.Width(w).Render("")) // spacer row
 	}
@@ -250,6 +250,16 @@ func (m Model) renderColumn(i int, col board.Column, w, h int) string {
 
 	body := lipgloss.JoinVertical(lipgloss.Left, lines...)
 	return container.Render(body)
+}
+
+// cardDisplay is the text rendered on a card: its title, plus a paperclip marker
+// when it has an attached note. Both the renderer and the mouse-geometry layout
+// (columnCardLayout) call this so their wrapping — and thus card heights — agree.
+func cardDisplay(c board.Card) string {
+	if c.Note != "" {
+		return c.Title + " 📎"
+	}
+	return c.Title
 }
 
 func countBadge(n int) string {
@@ -319,13 +329,15 @@ func (m Model) renderFooter() string {
 }
 
 const shortHelp = "hjkl/↑↓←→ move cursor · space grab · m mark · < > move column · " +
-	"a add · e edit · d del · n col · u undo · ? help · q quit"
+	"a add · e edit · o note · d del · n col · u undo · ? help · q quit"
 
 const fullHelp = `navigate   ←/→/h/l columns   ↑/↓/j/k cards   g/G top/bottom
 move card  space to grab, then ←→ column / ↑↓ reorder, space to drop
            (H/L/J/K also move the selected card directly)
 mouse      click a card and drag it to any column to drop it
 cards      a add   e/enter edit   d/x delete   (empty edit deletes)
+notes      o open the card's note in $EDITOR   (📎 marks cards with one;
+           a card with no note prompts for a .md path to attach)
 select     m mark card   M mark column   esc clear   then H/L move · d delete
 columns    n new   r rename   < / >  move left/right   D delete (asks first)
 history    u undo   ctrl+r redo

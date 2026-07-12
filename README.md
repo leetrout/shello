@@ -87,6 +87,7 @@ keep multiple boards. On first run you get a small starter board.
 | --- | --- |
 | `a` | add a card to the current column |
 | `e` / `enter` | edit the selected card (saving it empty deletes it) |
+| `o` | open the card's attached markdown note in `$EDITOR` (or attach a `.md` path if it has none) |
 | `d` / `x` | delete the selected card |
 | `n` | new column |
 | `r` | rename the current column |
@@ -125,7 +126,8 @@ keep multiple boards. On first run you get a small starter board.
     {
       "title": "Todo",
       "cards": [
-        { "title": "Welcome to shello 👋" }
+        { "title": "Welcome to shello 👋" },
+        { "title": "Ship the release", "note": "notes/release.md" }
       ]
     }
   ]
@@ -134,6 +136,15 @@ keep multiple boards. On first run you get a small starter board.
 
 It's plain JSON — edit it by hand if you like; `shello` reads it on startup and
 writes it back on every change.
+
+### Attaching notes
+
+A card can carry a `note`: the path to a markdown file with its long-form
+context, resolved relative to the board file's directory. Cards with a note show
+a 📎 marker. Press `o` on a card to open its note in `$EDITOR` (falling back to
+`$VISUAL`, then `vi`); on a card with no note, `o` prompts for a `.md` path to
+attach. Attach from within shello rather than hand-editing the JSON while it's
+open — the TUI rewrites the file on every change and would clobber your edit.
 
 ## Development
 
