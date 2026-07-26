@@ -137,6 +137,8 @@ func New(b board.Board, path string) Model {
 	ti := textinput.New()
 	ti.CharLimit = 120
 	ti.Prompt = "› "
+	ti.PlaceholderStyle = helpStyle
+	ti.CompletionStyle = helpStyle
 	return Model{
 		board:  b,
 		path:   path,
