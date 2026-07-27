@@ -374,11 +374,21 @@ func TestMarkAndNavigationDoNotRecordUndo(t *testing.T) {
 // ---- rendering ----
 
 func TestViewReflectsCursor(t *testing.T) {
-	lipgloss.SetColorProfile(lipgloss.ColorProfile()) // ensure a color profile is initialised
-	lipgloss.SetColorProfile(0)                       // 0 = TrueColor, so selection colors render
+	profile := lipgloss.ColorProfile()
+	t.Cleanup(func() {
+		lipgloss.SetColorProfile(profile)
+	})
+	lipgloss.SetColorProfile(0) // 0 = TrueColor, so selection colors render
 	m := newModel(t, board.Default(), 100, 30)
 
 	base := m.View()
+	input := send(m, key("a")).View()
+	for _, frame := range []string{base, input} {
+		assert.NotContains(t, frame, "\x1b[38;2;", "terminal theme must not emit true-color foregrounds")
+		assert.NotContains(t, frame, "\x1b[48;2;", "terminal theme must not emit true-color backgrounds")
+		assert.NotContains(t, frame, "\x1b[38;5;", "terminal theme must not emit 256-color foregrounds")
+		assert.NotContains(t, frame, "\x1b[48;5;", "terminal theme must not emit 256-color backgrounds")
+	}
 
 	shifted := m
 	shifted.curCol = 1

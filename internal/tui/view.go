@@ -8,48 +8,45 @@ import (
 	"github.com/leetrout/shello/internal/board"
 )
 
-// Base styles carry colours only; width/height are applied per-render because
-// they depend on the live terminal size.
+// Base styles carry presentation but no geometry; width/height are applied
+// per-render because they depend on the live terminal size.
 var (
+	accentColor  = lipgloss.ANSIColor(5)
+	successColor = lipgloss.ANSIColor(2)
+	dangerColor  = lipgloss.ANSIColor(1)
+
 	appTitleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#ffffff")).
-			Background(lipgloss.Color("#7D56F4")).
+			Foreground(accentColor).
+			Reverse(true).
 			Padding(0, 1)
-
-	panelBg = lipgloss.Color("#1E1E2A")
 
 	colTitleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#C9A9FF")).
-			Background(panelBg).
+			Foreground(accentColor).
 			Padding(0, 1)
 
 	colTitleActive = colTitleStyle.
-			Foreground(lipgloss.Color("#ffffff")).
-			Background(lipgloss.Color("#7D56F4"))
+			Reverse(true)
 
 	colTitleDrop = colTitleStyle.
-			Foreground(lipgloss.Color("#1a1a1a")).
-			Background(lipgloss.Color("#4EF0A5"))
+			Foreground(successColor).
+			Reverse(true)
 
 	sepStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#3a3a4a")).
-			Background(panelBg)
+			Faint(true)
 
 	cardStyle = lipgloss.NewStyle().
-			Padding(0, 1).
-			Background(lipgloss.Color("#2E2E42")).
-			Foreground(lipgloss.Color("#E6E6F0"))
+			Padding(0, 1)
 
 	cardSelected = cardStyle.
-			Background(lipgloss.Color("#7D56F4")).
-			Foreground(lipgloss.Color("#ffffff")).
+			Foreground(accentColor).
+			Reverse(true).
 			Bold(true)
 
 	cardGrabbed = cardStyle.
-			Background(lipgloss.Color("#4EF0A5")).
-			Foreground(lipgloss.Color("#0d0d14")).
+			Foreground(successColor).
+			Reverse(true).
 			Bold(true)
 
 	cardMarked = cardStyle.
@@ -58,30 +55,27 @@ var (
 			Bold(true)
 
 	cardDragging = cardStyle.
-			Faint(true).
-			Background(panelBg).
-			Foreground(lipgloss.Color("#666677"))
+			Faint(true)
 
 	emptyStyle = lipgloss.NewStyle().
-			Background(panelBg).
-			Foreground(lipgloss.Color("#55556a")).
+			Faint(true).
 			Padding(0, 1)
 
-	helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#8A8AA0"))
+	helpStyle = lipgloss.NewStyle().Faint(true)
 
 	statusStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#4EF0A5")).
+			Foreground(successColor).
 			Italic(true)
 
 	grabStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#0d0d14")).
-			Background(lipgloss.Color("#4EF0A5")).
+			Foreground(successColor).
+			Reverse(true).
 			Bold(true).
 			Padding(0, 1)
 
 	confirmStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#ffffff")).
-			Background(lipgloss.Color("#D64550")).
+			Foreground(dangerColor).
+			Reverse(true).
 			Bold(true).
 			Padding(0, 1)
 )
@@ -188,8 +182,7 @@ func (m Model) View() string {
 func (m Model) renderColumn(i int, col board.Column, w, h int) string {
 	container := lipgloss.NewStyle().
 		Width(w).
-		Height(h).
-		Background(panelBg)
+		Height(h)
 	if i < len(m.board.Columns)-1 {
 		container = container.MarginRight(colGap)
 	}
